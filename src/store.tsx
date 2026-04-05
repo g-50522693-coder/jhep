@@ -1,8 +1,11 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { AppState, Activity, Report, OrgPosition, Document, UnitFile, Settings } from './types';
+import { io } from 'socket.io-client';
+
+const socket = io();
 
 const defaultSettings: Settings = {
-  departmentName: 'Jabatan Hal Ehwal Pelajar (JHEP)',
+  departmentName: 'Jabatan Hal Kebajikan Pelajar (JHEP)',
   institutionName: 'Kolej Vokasional Beaufort',
 };
 
@@ -41,50 +44,37 @@ interface StoreContextType extends AppState {
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
 
-declare global {
-  const google: any;
-}
-
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [state, setState] = useState<AppState>(() => {
-    const saved = localStorage.getItem('jhep_data');
-    if (saved) {
-      try {
-        return { ...initialState, ...JSON.parse(saved) };
-      } catch (e) {
-        console.error('Failed to parse saved data', e);
-      }
-    }
-    return initialState;
-  });
+  const [state, setState] = useState<AppState>(initialState);
+  const isRemoteUpdate = useRef(false);
 
   useEffect(() => {
-    // Sync with localStorage
-    localStorage.setItem('jhep_data', JSON.stringify(state));
-    
-    // Sync with Google Apps Script if available
-    if (typeof google !== 'undefined' && google.script && google.script.run) {
-      google.script.run.withSuccessHandler(() => {
-        console.log('Data synced to Google Apps Script');
-      }).saveData(JSON.stringify(state));
-    }
-  }, [state]);
+    // Initial state from server
+    socket.on('state:init', (serverState: AppState) => {
+      isRemoteUpdate.current = true;
+      setState(serverState);
+    });
 
-  useEffect(() => {
-    // Initial load from Google Apps Script if available
-    if (typeof google !== 'undefined' && google.script && google.script.run) {
-      google.script.run.withSuccessHandler((data: string) => {
-        if (data && data !== '{}') {
-          try {
-            const parsed = JSON.parse(data);
-            setState(s => ({ ...s, ...parsed }));
-          } catch (e) {
-            console.error('Failed to parse GAS data', e);
-          }
-        }
-      }).loadData();
-    }
+    // Real-time updates from other users
+    socket.on('state:changed', (newState: AppState) => {
+      isRemoteUpdate.current = true;
+      setState(newState);
+    });
+
+    return () => {
+      socket.off('state:init');
+      socket.off('state:changed');
+    };
   }, []);
+
+  useEffect(() => {
+    if (isRemoteUpdate.current) {
+      isRemoteUpdate.current = false;
+      return;
+    }
+    // Sync local changes to server
+    socket.emit('state:update', state);
+  }, [state]);
 
   const generateId = () => crypto.randomUUID();
 
