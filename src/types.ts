@@ -54,10 +54,47 @@ export interface UnitFile {
   createdAt: string;
 }
 
+export interface Announcement {
+  id: string;
+  title: string;
+  content: string;
+  date: string;
+  author: string;
+  isImportant: boolean;
+  attachments?: string[];
+  createdAt: string;
+}
+
+export interface StudentForm {
+  id: string;
+  title: string;
+  description: string;
+  fileData?: string;
+  externalLink?: string;
+  createdAt: string;
+}
+
+export interface FormSubmission {
+  id: string;
+  studentName: string;
+  studentId: string;
+  formTitle: string;
+  submissionDate: string;
+  fileData: string;
+  status: 'pending' | 'reviewed' | 'completed';
+  createdAt: string;
+}
+
 export interface Settings {
   departmentName: string;
   institutionName: string;
   logo?: string;
+  operatingHours?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  announcementInfo?: string;
+  schoolCode?: string;
+  address?: string;
 }
 
 export interface AppState {
@@ -66,5 +103,8 @@ export interface AppState {
   orgPositions: OrgPosition[];
   documents: Document[];
   unitFiles: UnitFile[];
+  announcements: Announcement[];
+  studentForms: StudentForm[];
+  submissions: FormSubmission[];
   settings: Settings;
 }
