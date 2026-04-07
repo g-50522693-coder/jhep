@@ -2,10 +2,13 @@ import React, { createContext, useContext, useState, useEffect, useRef } from 'r
 import { AppState, Activity, Report, OrgPosition, Document, UnitFile, Settings, Announcement, StudentForm, FormSubmission } from './types';
 import { io } from 'socket.io-client';
 
+// Use polling as primary transport for better compatibility with proxies
 const socket = io({
-  transports: ['polling', 'websocket'],
-  reconnectionAttempts: 5,
+  transports: ['polling'],
+  reconnectionAttempts: Infinity, // Try forever
   reconnectionDelay: 1000,
+  reconnectionDelayMax: 5000,
+  timeout: 20000,
 });
 
 const defaultSettings: Settings = {
@@ -82,6 +85,8 @@ interface User {
 
 interface StoreContextType extends AppState {
   isConnected: boolean;
+  isSyncing: boolean;
+  lastSynced: string | null;
   user: User | null;
   login: (password: string) => boolean;
   logout: () => void;
@@ -124,11 +129,22 @@ interface StoreContextType extends AppState {
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
 
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [state, setState] = useState<AppState>(initialState);
+  // Load from localStorage initially for instant "offline" view
+  const [state, setState] = useState<AppState>(() => {
+    const saved = localStorage.getItem('jhep_state_cache');
+    return saved ? JSON.parse(saved) : initialState;
+  });
+  
   const [isConnected, setIsConnected] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSynced, setLastSynced] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
-  const isRemoteUpdate = useRef(false);
   const isInitialized = useRef(false);
+
+  // Cache state to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('jhep_state_cache', JSON.stringify(state));
+  }, [state]);
 
   useEffect(() => {
     // Check local storage for user session
@@ -166,16 +182,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
 
     socket.on('state:init', (serverState: AppState) => {
-      console.log('Received initial state from server');
-      if (serverState && Object.keys(serverState).length > 0) {
+      console.log('Received initial state from server', serverState);
+      if (serverState) {
         setState(s => ({
           ...s,
           ...serverState,
-          // Merge with initial state to ensure defaults exist if server is empty
-          announcements: serverState.announcements?.length > 0 ? serverState.announcements : s.announcements,
-          studentForms: serverState.studentForms?.length > 0 ? serverState.studentForms : s.studentForms,
-          settings: serverState.settings && Object.keys(serverState.settings).length > 0 ? serverState.settings : s.settings,
+          announcements: serverState.announcements || s.announcements,
+          studentForms: serverState.studentForms || s.studentForms,
+          settings: (serverState.settings && Object.keys(serverState.settings).length > 0) ? serverState.settings : s.settings,
         }));
+        setLastSynced(new Date().toLocaleTimeString());
       }
       isInitialized.current = true;
     });
@@ -186,17 +202,25 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     tables.forEach(table => {
       socket.on(`${table}:added`, (item) => {
         setState(s => ({ ...s, [table]: [...(s as any)[table], item] }));
+        setIsSyncing(false);
+        setLastSynced(new Date().toLocaleTimeString());
       });
       socket.on(`${table}:updated`, (item) => {
         setState(s => ({ ...s, [table]: (s as any)[table].map((i: any) => i.id === item.id ? item : i) }));
+        setIsSyncing(false);
+        setLastSynced(new Date().toLocaleTimeString());
       });
       socket.on(`${table}:deleted`, (id) => {
         setState(s => ({ ...s, [table]: (s as any)[table].filter((i: any) => i.id !== id) }));
+        setIsSyncing(false);
+        setLastSynced(new Date().toLocaleTimeString());
       });
     });
 
     socket.on('settings:updated', (newSettings) => {
       setState(s => ({ ...s, settings: newSettings }));
+      setIsSyncing(false);
+      setLastSynced(new Date().toLocaleTimeString());
     });
 
     socket.on('disconnect', () => {
@@ -221,133 +245,158 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const addActivity = (activity: Omit<Activity, 'id' | 'createdAt'>) => {
     const newItem = { ...activity, id: generateId(), createdAt: new Date().toISOString() };
+    setIsSyncing(true);
     socket.emit('activities:add', newItem);
   };
 
   const updateActivity = (id: string, activity: Partial<Activity>) => {
     const current = state.activities.find(a => a.id === id);
     if (current) {
+      setIsSyncing(true);
       socket.emit('activities:update', { ...current, ...activity });
     }
   };
 
   const deleteActivity = (id: string) => {
+    setIsSyncing(true);
     socket.emit('activities:delete', id);
   };
 
   const addReport = (report: Omit<Report, 'id' | 'createdAt'>) => {
     const newItem = { ...report, id: generateId(), createdAt: new Date().toISOString() };
+    setIsSyncing(true);
     socket.emit('reports:add', newItem);
   };
 
   const updateReport = (id: string, report: Partial<Report>) => {
     const current = state.reports.find(r => r.id === id);
     if (current) {
+      setIsSyncing(true);
       socket.emit('reports:update', { ...current, ...report });
     }
   };
 
   const deleteReport = (id: string) => {
+    setIsSyncing(true);
     socket.emit('reports:delete', id);
   };
 
   const addOrgPosition = (pos: Omit<OrgPosition, 'id' | 'createdAt'>) => {
     const newItem = { ...pos, id: generateId(), createdAt: new Date().toISOString() };
+    setIsSyncing(true);
     socket.emit('orgPositions:add', newItem);
   };
 
   const updateOrgPosition = (id: string, pos: Partial<OrgPosition>) => {
     const current = state.orgPositions.find(o => o.id === id);
     if (current) {
+      setIsSyncing(true);
       socket.emit('orgPositions:update', { ...current, ...pos });
     }
   };
 
   const deleteOrgPosition = (id: string) => {
+    setIsSyncing(true);
     socket.emit('orgPositions:delete', id);
   };
 
   const addDocument = (doc: Omit<Document, 'id' | 'createdAt'>) => {
     const newItem = { ...doc, id: generateId(), createdAt: new Date().toISOString() };
+    setIsSyncing(true);
     socket.emit('documents:add', newItem);
   };
 
   const updateDocument = (id: string, doc: Partial<Document>) => {
     const current = state.documents.find(d => d.id === id);
     if (current) {
+      setIsSyncing(true);
       socket.emit('documents:update', { ...current, ...doc });
     }
   };
 
   const deleteDocument = (id: string) => {
+    setIsSyncing(true);
     socket.emit('documents:delete', id);
   };
 
   const addUnitFile = (file: Omit<UnitFile, 'id' | 'createdAt'>) => {
     const newItem = { ...file, id: generateId(), createdAt: new Date().toISOString() };
+    setIsSyncing(true);
     socket.emit('unitFiles:add', newItem);
   };
 
   const updateUnitFile = (id: string, file: Partial<UnitFile>) => {
     const current = state.unitFiles.find(f => f.id === id);
     if (current) {
+      setIsSyncing(true);
       socket.emit('unitFiles:update', { ...current, ...file });
     }
   };
 
   const deleteUnitFile = (id: string) => {
+    setIsSyncing(true);
     socket.emit('unitFiles:delete', id);
   };
 
   const addAnnouncement = (ann: Omit<Announcement, 'id' | 'createdAt'>) => {
     const newItem = { ...ann, id: generateId(), createdAt: new Date().toISOString() };
+    setIsSyncing(true);
     socket.emit('announcements:add', newItem);
   };
 
   const updateAnnouncement = (id: string, ann: Partial<Announcement>) => {
     const current = state.announcements.find(a => a.id === id);
     if (current) {
+      setIsSyncing(true);
       socket.emit('announcements:update', { ...current, ...ann });
     }
   };
 
   const deleteAnnouncement = (id: string) => {
+    setIsSyncing(true);
     socket.emit('announcements:delete', id);
   };
 
   const addStudentForm = (form: Omit<StudentForm, 'id' | 'createdAt'>) => {
     const newItem = { ...form, id: generateId(), createdAt: new Date().toISOString() };
+    setIsSyncing(true);
     socket.emit('studentForms:add', newItem);
   };
 
   const updateStudentForm = (id: string, form: Partial<StudentForm>) => {
     const current = state.studentForms.find(f => f.id === id);
     if (current) {
+      setIsSyncing(true);
       socket.emit('studentForms:update', { ...current, ...form });
     }
   };
 
   const deleteStudentForm = (id: string) => {
+    setIsSyncing(true);
     socket.emit('studentForms:delete', id);
   };
 
   const addSubmission = (sub: Omit<FormSubmission, 'id' | 'createdAt'>) => {
     const newItem = { ...sub, id: generateId(), createdAt: new Date().toISOString() };
+    setIsSyncing(true);
     socket.emit('submissions:add', newItem);
   };
 
   const updateSubmission = (id: string, sub: Partial<FormSubmission>) => {
     const current = state.submissions.find(s => s.id === id);
     if (current) {
+      setIsSyncing(true);
       socket.emit('submissions:update', { ...current, ...sub });
     }
   };
 
   const deleteSubmission = (id: string) => {
+    setIsSyncing(true);
     socket.emit('submissions:delete', id);
   };
 
   const updateSettings = (settings: Partial<Settings>) => {
+    setIsSyncing(true);
     socket.emit('settings:update', { ...state.settings, ...settings });
   };
 
@@ -355,6 +404,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     <StoreContext.Provider value={{
       ...state,
       isConnected,
+      isSyncing,
+      lastSynced,
       user,
       login,
       logout,
