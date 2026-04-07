@@ -2,10 +2,11 @@ import React, { createContext, useContext, useState, useEffect, useRef } from 'r
 import { AppState, Activity, Report, OrgPosition, Document, UnitFile, Settings, Announcement, StudentForm, FormSubmission } from './types';
 import { io } from 'socket.io-client';
 
-// Use polling as primary transport for better compatibility with proxies
+// Initialize socket outside but don't connect yet
 const socket = io({
   transports: ['polling'],
-  reconnectionAttempts: Infinity, // Try forever
+  autoConnect: false, // We will connect manually in the provider
+  reconnectionAttempts: Infinity,
   reconnectionDelay: 1000,
   reconnectionDelayMax: 5000,
   timeout: 20000,
@@ -176,9 +177,22 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     console.log('Initializing Socket.io connection...');
     
+    // Connect manually
+    socket.connect();
+
+    // Check if already connected
+    if (socket.connected) {
+      setIsConnected(true);
+    }
+    
     socket.on('connect', () => {
       console.log('Connected to server with ID:', socket.id);
       setIsConnected(true);
+    });
+
+    socket.on('connect_error', (error) => {
+      console.error('Socket connection error:', error);
+      setIsConnected(false);
     });
 
     socket.on('state:init', (serverState: AppState) => {

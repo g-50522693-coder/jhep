@@ -108,8 +108,9 @@ async function startServer() {
   });
 
   const PORT = 3000;
+  console.log(`Starting server in ${process.env.NODE_ENV || 'development'} mode...`);
 
-  // Health check
+  // API routes FIRST
   app.get('/api/health', (req, res) => {
     res.json({ 
       status: 'ok', 

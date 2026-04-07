@@ -1,40 +1,14 @@
 import React from 'react';
 import { useStore } from '../store';
-import { Phone, Hash, MapPin, Wifi, WifiOff } from 'lucide-react';
+import { Phone, Hash, MapPin } from 'lucide-react';
 
 export const Header: React.FC = () => {
-  const { settings, isConnected, isSyncing, lastSynced } = useStore();
+  const { settings } = useStore();
 
   return (
     <header className="bg-slate-900 border-b-4 border-yellow-400 print:bg-white print:border-b-2 print:border-gray-300">
       {/* Top Bar with Logos and Main Title */}
       <div className="bg-gradient-to-r from-blue-900 via-blue-800 to-blue-900 px-4 py-6 md:py-8 relative">
-        {/* Connection Status */}
-        <div className="absolute top-2 right-4 flex flex-col items-end gap-1">
-          <div className="flex items-center gap-1.5">
-            {isSyncing ? (
-              <>
-                <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse" />
-                <span className="text-[10px] text-yellow-400 font-bold uppercase tracking-widest">Saving...</span>
-              </>
-            ) : isConnected ? (
-              <>
-                <Wifi className="w-3 h-3 text-green-400" />
-                <span className="text-[10px] text-green-400 font-bold uppercase tracking-widest">Live</span>
-              </>
-            ) : (
-              <>
-                <WifiOff className="w-3 h-3 text-red-400" />
-                <span className="text-[10px] text-red-400 font-bold uppercase tracking-widest">Offline</span>
-              </>
-            )}
-          </div>
-          {lastSynced && (
-            <span className="text-[8px] text-gray-400 font-medium uppercase tracking-tighter">
-              Updated: {lastSynced}
-            </span>
-          )}
-        </div>
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
           {/* Left Logos */}
           <div className="flex items-center gap-4">
